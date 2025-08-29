@@ -4,7 +4,7 @@ import {User} from '../models/user.model.js'
 import {uploadOnCloudinary} from '../utils/cloudinary.js'
 import { ApiResponse } from '../utils/ApiResponse.js';
 import jwt from "jsonwebtoken"
-import { UploadStream } from 'cloudinary';
+import mongoose from 'mongoose';
 
 const isValidEmail = (email) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -229,6 +229,9 @@ const changeCurrentPassword = asyncHandler( async(req, res) => {
         throw new ApiError(400, "Invalid old password")
     }
     user.password = newPassword
+    if(newPassword === oldPassword){
+        throw new ApiError(400, "Passwords cant be same")
+    }
     await user.save({validateBeforeSave: false})
     return res
     .status(200)
@@ -241,26 +244,46 @@ const getCurrentUser = asyncHandler( async(req, res) => {
     .json(200, req.user, "Current user fetched successfully")
 })
 
-const updateAccountDetails = asyncHandler( async (req,res) => {
-    const {fullName, email} = req.body
-    if(!fullName || !email){
-        throw new ApiError(400, "All fields are required")
+const updateAccountDetails = asyncHandler(async (req, res) => {
+  const { fullName, email, username } = req.body;
+
+  if (!fullName || !email || !username) {
+    throw new ApiError(400, "All fields are required");
+  }
+
+  try {
+    const updatedUser = await User.findOneAndUpdate(
+      {
+        _id: req.user?._id,
+        $or: [
+          { email: { $ne: email } },
+          { username: { $ne: username } },
+          { fullName: { $ne: fullName } }
+        ]
+      },
+      { $set: { fullName, email, username } },
+      { new: true, runValidators: true }
+    ).select("-password");
+
+    if (!updatedUser) {
+      throw new ApiError(400, "No changes detected");
     }
-    const user = await User.findByIdAndUpdate(
-        req.user?._id,
-        {
-            $set: {
-                fullName: fullName,
-                email: email
-            }
-        },
-        {new: true}
-    ).select("-password")
 
     return res
-    .status(200)
-    .json(new ApiResponse(200, user, "Account details updated successfully"))
-})
+      .status(200)
+      .json(new ApiResponse(200, updatedUser, "Account details updated successfully"));
+
+  } catch (err) {
+    if (err.code === 11000) {
+      // wrap duplicate key error into ApiError
+      const field = Object.keys(err.keyPattern)[0];
+      throw new ApiError(400, `${field} is already taken`);
+    }
+
+    // wrap any other unexpected errors too
+    throw new ApiError(500, err.message || "Something went wrong while updating account details");
+  }
+});
 
 const updateUserAvatar = asyncHandler( async(req, res) => {
     const avatarLocalPath = req.file?.path
@@ -322,7 +345,7 @@ const getUserChannelProfile = asyncHandler (async (req, res)=>{
     const channel =  await User.aggregate([
         {
             $match: {
-                username: UploadStream?.toLowerCase()
+                username: username?.toLowerCase()
             }
         },
         {
@@ -382,4 +405,57 @@ const getUserChannelProfile = asyncHandler (async (req, res)=>{
     )
 })
 
-export {registerUser, loginUser, logoutUser, refreshAccessToken, changeCurrentPassword, getCurrentUser, updateAccountDetails, updateUserAvatar, updateUserCoverImage, getUserChannelProfile}
+const getWatchHistory = asyncHandler( async(req, res)=>{
+    const user = await User.aggregate([
+        {
+            $match: {
+                _id: new mongoose.Types.ObjectId(req.user._id)
+            }
+        },
+        {
+            $lookup: {
+                from: "videos",
+                localField: "watchHistory",
+                foreignField: "_id",
+                as: "watchHistory",
+                pipeline: [
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "owner",
+                            foreignField: "_id",
+                            as: "owner",
+                            pipeline: [
+                                {
+                                    $project: {
+                                        fullName: 1,
+                                        username: 1,
+                                        avatar: 1
+                                    }
+                                }
+                            ]
+                        }
+                    },{
+                        $addFields:{
+                            owner:{
+                                $first: "$owner"
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ])
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(
+            200,
+            user[0].watchHistory,
+            "Watch History fetched successfully"
+        )
+    )
+})
+
+export {registerUser, loginUser, logoutUser, refreshAccessToken, changeCurrentPassword, getCurrentUser, updateAccountDetails, updateUserAvatar, updateUserCoverImage, getUserChannelProfile, getWatchHistory}
