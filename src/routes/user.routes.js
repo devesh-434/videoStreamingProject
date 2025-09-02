@@ -22,6 +22,7 @@ router.route("/register").post(
 router.route("/login").post(loginUser)
 
 //secured routes
+//secured only because we're adding verifyJWT middleware, hence it wont let u access the route if u aint logged in
 router.route("/logout").post(verifyJWT, logoutUser)
 router.route("/refresh-token").post(refreshAccessToken) // We're not verifying if user is signed in here, because we've already verified in the function we wrote in controller
 router.route("/change-password").post(verifyJWT, changeCurrentPassword)

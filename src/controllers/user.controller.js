@@ -72,7 +72,10 @@ const registerUser = asyncHandler( async (req, res) => {
     const avatar = await uploadOnCloudinary(avatarLocalPath)
     const coverImage = await uploadOnCloudinary(coverImageLocalPath)
     if(!avatar){
-        throw new ApiError(400, "Avatar file is required")
+        throw new ApiError(400, "Avatar could not get uploaded on cloudinary")
+    }
+    if(!coverImage){
+        throw new ApiError(400, "CoverImage could not get uploaded on cloudinary")
     }
 
     // 6) Create user object - create entry in db
@@ -244,10 +247,10 @@ const getCurrentUser = asyncHandler( async(req, res) => {
     .json(200, req.user, "Current user fetched successfully")
 })
 
-const updateAccountDetails = asyncHandler(async (req, res) => {
+const updateAccountDetails = asyncHandler( async (req, res) => {
   const { fullName, email, username } = req.body;
 
-  if (!fullName || !email || !username) {
+  if (!fullName && !email && !username) {
     throw new ApiError(400, "All fields are required");
   }
 
