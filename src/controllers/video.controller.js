@@ -25,7 +25,7 @@ const getAllVideos = asyncHandler (async(req,res)=>{
         { $match: matchStage },
         { $sort: sortStage },
         { $skip: (page - 1) * limit },
-        { $limit: limit },
+        { $limit: limit }
     ])
 
     return res.status(200).json(new ApiResponse(200, videos, "Videos fetched successfully"))
